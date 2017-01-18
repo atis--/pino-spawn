@@ -27,16 +27,23 @@ module.exports = function (user_stream, external_stream_cfg) {
     const fatal = function (msg, err) {
         if (user_stream) {
             try {
-                user_stream.write(JSON.stringify({
+                const pino_json = {
                     v: 1,
                     msg: msg,
-                    err: err ? stdSerializers.err(err) : undefined,
                     level: 60,
                     time: Date.now(),
                     pid: process.pid,
                     name: process.title,
                     hostname: hostname()
-                }));
+                };
+                if (err) {
+                    const serialized = stdSerializers.err(err);
+                    Object.assign(pino_json, {
+                        type: serialized.type,
+                        stack: serialized.stack
+                    });
+                }
+                user_stream.write(JSON.stringify(pino_json)+'\n');
             } catch (_) {
                 console.error(msg, err);
             }
