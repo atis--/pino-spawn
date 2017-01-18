@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 'use strict';
 
-const { error } = console;
-const { exit } = process;
-
 const split = require('split2');
 const through = require('through2');
 const pump = require('pump');
@@ -13,11 +10,8 @@ const json_parse = require('fast-json-parse');
 // must have even number of arguments
 //
 const args = process.argv.slice(2);
-if (args.length % 2 == 1) {
-    error('expected even number of arguments');
-    error('usage: ./child.js stream-name level stream-name2 level2 ...');
-    exit(1);
-}
+if (args.length % 2 == 1)
+    throw new Error('expected even number of arguments');
 
 //
 // create external streams based on arguments
@@ -28,8 +22,8 @@ for (let i = 0; i < args.length / 2; i++) {
     const level = +args[i*2 + 1];
 
     if (!Number.isInteger(level) || level <= 0) {
-        error(`expected non-negative integer as level, got "${args[i*2 + 1]}"`);
-        exit(1);
+        throw new Error(`expected non-negative integer as level, `+
+                        `got "${args[i*2 + 1]}"`);
     }
 
     let stream;
@@ -39,8 +33,7 @@ for (let i = 0; i < args.length / 2; i++) {
             stream = syslog.Stream(syslog.LOG_ERR, syslog.LOG_USER);
             break;
         default:
-            error(`unknown external stream name "${stream_name}"`);
-            exit(1);
+            throw new Error(`unknown external stream name "${stream_name}"`);
     }
 
     external.push({ stream, level });
