@@ -8,7 +8,7 @@
 
 ## About
 
-*pino-spawn* is a [pino](pino) transport that spawns a child process and pipes
+*pino-spawn* is a [pino][pino] transport that spawns a child process and pipes
 all pino logs into it (with the logs also going to your regular pino output
 stream like *stdout*). The child will then parse the logs, and distribute it to
 some external streams of your choice. The logs may be filtered based on their
