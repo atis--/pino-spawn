@@ -1,0 +1,25 @@
+{
+  "name": "pino-spawn",
+  "version": "1.0.0",
+  "description": "Pino logger stream splitter and forwarder",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/atis--/pino-spawn.git"
+  },
+  "keywords": [
+    "pino",
+    "split",
+    "spawn",
+    "syslog"
+  ],
+  "author": "Atis Grinbergs",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/atis--/pino-spawn/issues"
+  },
+  "homepage": "https://github.com/atis--/pino-spawn#readme"
+}
