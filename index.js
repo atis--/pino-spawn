@@ -1,6 +1,8 @@
 'use strict';
 
+const { stdSerializers } = require('pino');
 const { spawn } = require('child_process');
+const { hostname } = require('os');
 const { Stream, PassThrough } = require('stream');
 
 module.exports = function (user_stream, external_stream_cfg) {
@@ -18,11 +20,44 @@ module.exports = function (user_stream, external_stream_cfg) {
                             `got "${level}"`);
         }
 
-        child_args.push([stream_name, level]);
+        child_args.push(stream_name, level);
     }
 
-    // spawn child script
-    const child = spawn(`${__dirname}/child.js`, child_args);
+    // write fatal errors to user's stream if possible; otherwise stderr
+    const fatal = function (msg, err) {
+        if (user_stream) {
+            try {
+                user_stream.write(JSON.stringify({
+                    v: 1,
+                    msg: msg,
+                    err: err ? stdSerializers.err(err) : undefined,
+                    level: 60,
+                    time: Date.now(),
+                    pid: process.pid,
+                    name: process.title,
+                    hostname: hostname()
+                }));
+            } catch (_) {
+                console.error(msg, err);
+            }
+        } else {
+            console.error(msg, err);
+        }
+    }
+
+    // spawn child script, handle errors
+    const child = spawn(`${__dirname}/child.js`, child_args, {
+        stdio: ['pipe', process.stdout, process.stderr]
+    });
+    child.on('exit', (code, signal) => {
+        fatal(`pino-spawn child exited with code ${code} and signal ${signal}`);
+    });
+    child.on('error', err => {
+        fatal('pino-spawn child error', err);
+    });
+    child.stdin.on('error', err => {
+        fatal('pino-spawn child stdin error', err);
+    });
 
     // if user stream is not given, then simply return the child stream
     if (!user_stream)
