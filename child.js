@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
+const { Stream } = require('stream');
 const { levels } = require('pino');
 const split = require('split2');
 const through = require('through2');
@@ -17,16 +18,40 @@ if (err)
 //
 // call user-provided stream functions to init external streams
 //
-const external = streams_cfg.map(({ stream, level }) => {
+const write_to_stream = streams_cfg.map(({ stream, level }) => {
     if (typeof level == 'string')
         level = levels.values[level];
     else
         level = level || 0;
 
-    return {
-        stream: eval(`(${stream})()`),
-        level: level
-    };
+    // eval user function to produce the stream
+    const pino_stream = eval(`(${stream})()`);
+
+    // different write function for each type of stream
+    if (pino_stream instanceof Stream) {
+        if (pino_stream._writableState.objectMode) {
+            // handle object mode streams
+            return function (line, obj) {
+                if (obj && obj.level >= level)
+                    pino_stream.write(obj);
+            }
+        }
+
+        // Stream is not an object-mode stream: write raw line (+newline). Also
+        // write any lines that we could not parse as JSON.
+        return function (line, obj) {
+            if (!obj || obj.level >= level)
+                pino_stream.write(line + '\n');
+        }
+    }
+    if (typeof pino_stream.write == 'function') {
+        // handle "raw" bunyan-type streams (same as object-mode streams)
+        return function (line, obj) {
+            if (obj && obj.level >= level)
+                pino_stream.write(obj);
+        }
+    }
+    throw new Error('unsupported pino-spawn stream');
 });
 
 //
@@ -36,20 +61,12 @@ const external = streams_cfg.map(({ stream, level }) => {
 // Transport setup based on
 //     https://github.com/pinojs/pino/blob/master/docs/transports.md
 //
-const n_streams = external.length;
+const n_streams = write_to_stream.length;
 const transport = through.obj(function (line, enc, cb) {
     const { value } = json_parse(line);
-    for (let i = 0; i < n_streams; i++) {
-        const { stream, level } = external[i];
-        if (!stream._writableState.objectMode) {
-            // Write raw line (+newline) if stream is not an object-mode stream.
-            // Also write any lines that we could not parse as JSON.
-            if (!value || value.level >= level)
-                stream.write(line + '\n');
-        } else if (value && value.level >= level) {
-            stream.write(value);
-        }
-    }
+    for (let i = 0; i < n_streams; i++)
+        write_to_stream[i](line, value);
+
     cb();
 });
 
