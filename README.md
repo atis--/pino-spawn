@@ -44,11 +44,12 @@ const pino_out = pino_spawn({
         },
         {
             stream: function () {
-                return new require('bunyan-slack')({
+                const BunyanSlack = require('bunyan-slack');
+                return new BunyanSlack({
                     webhook_url: "your_webhook_url",
                     channel: "#your_channel",
                     username: "your_username",
-                })
+                });
             },
             level: 'warn'
         },
