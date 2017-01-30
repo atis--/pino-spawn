@@ -1,59 +1,38 @@
 'use strict';
 
-const { stdSerializers } = require('pino');
+const { levels } = require('pino');
 const { spawn } = require('child_process');
-const { hostname } = require('os');
-const { Stream, PassThrough } = require('stream');
 
-module.exports = function (user_stream, external_stream_cfg) {
-    if (user_stream && !(user_stream instanceof Stream))
-        throw new Error(`value passed to pino-spawn is not a Stream`);
+module.exports = function (cfg) {
+    // validate config
+    if (!cfg || typeof cfg != 'object' || !Array.isArray(cfg.streams))
+        throw new Error('missing pino-spawn stream configuration');
 
-    // prepare args for spawned child
-    const child_args = [];
-    for (const stream_name in external_stream_cfg) {
-        const level = external_stream_cfg[stream_name];
+    // validate each stream config
+    cfg.streams.forEach(function (stream_cfg) {
+        const { stream, level } = stream_cfg;
+        if (!stream || typeof stream != 'function')
+            throw new Error('all pino-spawn streams must be wrapped in a function');
 
-        // validate level
-        if (!Number.isInteger(level) || level <= 0) {
-            throw new Error(`expected non-negative integer as level, `+
-                            `got "${level}"`);
-        }
+        if (typeof level == 'number' && !isFinite(level) || level < 0)
+            throw new Error('invalid pino stream level');
 
-        child_args.push(stream_name, level);
-    }
+        if (typeof level == 'string' && !(level in levels.values))
+            throw new Error('invalid pino stream level name');
+    });
 
-    // write fatal errors to user's stream if possible; otherwise stderr
+    // stringify config along with the functions
+    const child_arg = JSON.stringify(cfg.streams, (key, value) => {
+        return typeof value == 'function' ? value.toString() : value;
+    });
+
+    // write fatal errors to stderr
     const fatal = function (msg, err) {
-        if (user_stream) {
-            try {
-                const pino_json = {
-                    v: 1,
-                    msg: msg,
-                    level: 60,
-                    time: Date.now(),
-                    pid: process.pid,
-                    name: process.title,
-                    hostname: hostname()
-                };
-                if (err) {
-                    const serialized = stdSerializers.err(err);
-                    Object.assign(pino_json, {
-                        type: serialized.type,
-                        stack: serialized.stack
-                    });
-                }
-                user_stream.write(JSON.stringify(pino_json)+'\n');
-            } catch (_) {
-                console.error(msg, err);
-            }
-        } else {
-            console.error(msg, err);
-        }
+        console.error(msg, err);
     }
 
     // spawn child script, handle errors
-    const child = spawn(`${__dirname}/child.js`, child_args, {
+    const child = spawn(`${__dirname}/child.js`, [ child_arg ], {
         stdio: ['pipe', process.stdout, process.stderr]
     });
     child.on('exit', (code, signal) => {
@@ -66,14 +45,6 @@ module.exports = function (user_stream, external_stream_cfg) {
         fatal('pino-spawn child stdin error', err);
     });
 
-    // if user stream is not given, then simply return the child stream
-    if (!user_stream)
-        return child.stdin;
-
-    // let Pino output go to both the user's stream and spawned child
-    const out_stream = new PassThrough();
-    out_stream.pipe(user_stream);
-    out_stream.pipe(child.stdin);
-
-    return out_stream;
+    // return the child's stdin
+    return child.stdin;
 }
