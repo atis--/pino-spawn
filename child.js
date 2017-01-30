@@ -1,43 +1,33 @@
 #!/usr/bin/env node
 'use strict';
 
+const { levels } = require('pino');
 const split = require('split2');
 const through = require('through2');
 const pump = require('pump');
 const json_parse = require('fast-json-parse');
 
 //
-// must have even number of arguments
+// parse command line argument JSON
 //
-const args = process.argv.slice(2);
-if (args.length % 2 == 1)
-    throw new Error('expected even number of arguments');
+const { err, value: streams_cfg } = json_parse(process.argv[2]);
+if (err)
+    throw err;
 
 //
-// create external streams based on arguments
+// call user-provided stream functions to init external streams
 //
-const external = [];
-for (let i = 0; i < args.length / 2; i++) {
-    const stream_name = args[i*2];
-    const level = +args[i*2 + 1];
+const external = streams_cfg.map(({ stream, level }) => {
+    if (typeof level == 'string')
+        level = levels.values[level];
+    else
+        level = level || 0;
 
-    if (!Number.isInteger(level) || level <= 0) {
-        throw new Error(`expected non-negative integer as level, `+
-                        `got "${args[i*2 + 1]}"`);
-    }
-
-    let stream;
-    switch (stream_name) {
-        case 'modern-syslog':
-            const syslog = require('modern-syslog');
-            stream = syslog.Stream(syslog.LOG_ERR, syslog.LOG_USER);
-            break;
-        default:
-            throw new Error(`unknown external stream name "${stream_name}"`);
-    }
-
-    external.push({ stream, level });
-}
+    return {
+        stream: eval(`(${stream})()`),
+        level: level
+    };
+});
 
 //
 // Parse incoming Pino logs as JSON, and then write to external streams (or
@@ -47,12 +37,17 @@ for (let i = 0; i < args.length / 2; i++) {
 //     https://github.com/pinojs/pino/blob/master/docs/transports.md
 //
 const n_streams = external.length;
-const transport = through.obj(function (chunk, enc, cb) {
-    const { value } = json_parse(chunk);
-    if (value) {
-        for (let i = 0; i < n_streams; i++) {
-            if (value && value.level >= external[i].level) 
-                external[i].stream.write(chunk);
+const transport = through.obj(function (line, enc, cb) {
+    const { value } = json_parse(line);
+    for (let i = 0; i < n_streams; i++) {
+        const { stream, level } = external[i];
+        if (!stream._writableState.objectMode) {
+            // Write raw line (+newline) if stream is not an object-mode stream.
+            // Also write any lines that we could not parse as JSON.
+            if (!value || value.level >= level)
+                stream.write(line + '\n');
+        } else if (value && value.level >= level) {
+            stream.write(value);
         }
     }
     cb();
