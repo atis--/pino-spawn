@@ -45,6 +45,9 @@ module.exports = function (cfg) {
         fatal('pino-spawn child stdin error', err);
     });
 
+    // kill child on parent exit
+    process.once('exit', () => child.kill());
+
     // return the child's stdin
     return child.stdin;
 }
